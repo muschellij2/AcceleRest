@@ -66,15 +66,31 @@ def find_input_files(directory: str | Path, file_type: str = "auto") -> list[str
     return sorted(files)
 
 
-def _column_lookup(columns: pd.Index, candidates: tuple[str, ...]) -> str | None:
+def _column_matches(columns: pd.Index, candidates: tuple[str, ...]) -> list[str]:
     lookup = {str(column).strip().lower(): str(column) for column in columns}
-    return next((lookup[name] for name in candidates if name in lookup), None)
+    return [lookup[name] for name in candidates if name in lookup]
+
+
+def _column_lookup(columns: pd.Index, candidates: tuple[str, ...]) -> str | None:
+    matches = _column_matches(columns, candidates)
+    return matches[0] if matches else None
 
 
 def _read_csv(path: str | Path) -> pd.DataFrame:
     data = pd.read_csv(path, compression="infer")
-    time_col = _column_lookup(data.columns, _TIME_NAMES)
-    axes = {axis: _column_lookup(data.columns, names) for axis, names in _AXIS_NAMES.items()}
+    time_matches = _column_matches(data.columns, _TIME_NAMES)
+    axis_matches = {axis: _column_matches(data.columns, names) for axis, names in _AXIS_NAMES.items()}
+    if len(time_matches) > 1:
+        raise ValueError(f"CSV has multiple recognised timestamp columns: {time_matches}.")
+    ambiguous_axes = {axis: matches for axis, matches in axis_matches.items() if len(matches) > 1}
+    if ambiguous_axes:
+        details = "; ".join(f"{axis}: {matches}" for axis, matches in ambiguous_axes.items())
+        raise ValueError(
+            f"CSV has ambiguous acceleration columns ({details}). Keep exactly one recognised "
+            "column for each of x, y, and z."
+        )
+    time_col = time_matches[0] if time_matches else None
+    axes = {axis: matches[0] if matches else None for axis, matches in axis_matches.items()}
     if time_col is None or any(column is None for column in axes.values()):
         raise ValueError(
             "CSV input must contain a timestamp column (time, timestamp, datetime, "
