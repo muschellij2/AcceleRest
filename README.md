@@ -19,6 +19,7 @@ AcceleRest now automatically accepts one recording per file in any of these form
 | --- | --- |
 | `.cwa`, `.cwa.gz` | Decoded by ActiPy's Axivity reader, then low-pass filtered, gravity-calibrated, non-wear flagged, and resampled to 30 Hz. Compressed raw inputs require ActiPy 3.8.0 or later. |
 | `.gt3x`, `.gt3x.gz` | Decoded by ActiPy's ActiGraph reader using the same processing pipeline. Compressed files are passed directly to ActiPy; do not unpack them first. They require ActiPy 3.8.0 or later. |
+| `.bin`, `.bin.gz` | Decoded by ActiPy as GENEActiv data, or as Matrix data when its Matrix format detector identifies the file. The same processing pipeline is used. Compressed raw inputs require ActiPy 3.8.0 or later. |
 | `.csv`, `.csv.gz` | Must contain a timestamp (`time`, `timestamp`, `datetime`, or `date`) and `x`, `y`, `z` columns (common `acc_x/y/z`, `acceleration_x/y/z`, and `accelerometer_x/y/z` aliases also work). Gzip-compressed CSV is read directly by pandas and is processed with ActiPy at 30 Hz. |
 | `.h5` | Backward-compatible model-ready input: `data/accelerometry` must be a `(3, n_samples)` array already at 30 Hz. |
 

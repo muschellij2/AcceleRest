@@ -1,9 +1,9 @@
 """Input readers and validation for AcceleRest inference.
 
 The model consumes gravity-calibrated, 30 Hz acceleration in ``(3, samples)``
-order.  Raw Axivity and ActiGraph files are decoded by actipy; CSV is handled
-as a timestamped accelerometer table and passed through actipy's *processing*
-API, rather than pretending that it is a device file.
+order. Raw Axivity, ActiGraph, GENEActiv, and Matrix files are decoded by
+actipy; CSV is handled as a timestamped accelerometer table and passed through
+actipy's *processing* API, rather than pretending that it is a device file.
 """
 
 from __future__ import annotations
@@ -17,8 +17,10 @@ import pandas as pd
 import actipy
 
 
-RAW_SUFFIXES = (".cwa", ".cwa.gz", ".gt3x", ".gt3x.gz")
-SUPPORTED_FILE_TYPES = ("auto", "h5", "cwa", "cwa.gz", "gt3x", "gt3x.gz", "csv", "csv.gz")
+RAW_SUFFIXES = (".cwa", ".cwa.gz", ".gt3x", ".gt3x.gz", ".bin", ".bin.gz")
+SUPPORTED_FILE_TYPES = (
+    "auto", "h5", "cwa", "cwa.gz", "gt3x", "gt3x.gz", "bin", "bin.gz", "csv", "csv.gz",
+)
 _TIME_NAMES = ("time", "timestamp", "datetime", "date_time", "date")
 _AXIS_NAMES = {
     "x": ("x", "acc_x", "acceleration_x", "accelerometer_x"),
@@ -30,7 +32,9 @@ _AXIS_NAMES = {
 def infer_file_type(path: str | Path) -> str:
     """Return the supported type implied by *path*, or raise a useful error."""
     name = Path(path).name.lower()
-    for suffix in (".cwa.gz", ".gt3x.gz", ".csv.gz", ".gt3x", ".cwa", ".h5", ".csv"):
+    for suffix in (
+        ".cwa.gz", ".gt3x.gz", ".bin.gz", ".csv.gz", ".gt3x", ".cwa", ".bin", ".h5", ".csv",
+    ):
         if name.endswith(suffix):
             return suffix[1:]
     raise ValueError(
