@@ -859,7 +859,10 @@ class AccelerometryDataset(Dataset):
         self.step_samples = int(self.step_patches * self.patch_samples)
 
         if self.data.shape[1] < self.window_samples:
-            raise RuntimeError(f"Number of samples {data.shape[1]} not enough for window size {self.window_samples}.")
+            raise RuntimeError(
+                f"Number of samples {self.data.shape[1]} not enough for window size "
+                f"{self.window_samples} ({self.window_samples / 30 / 3600:.2f} hours at 30 Hz)."
+            )
 
         # Unfold the data into windows -> shape (axes, n_windows, window_size)
         data_windows = self.data.unfold(-1, self.window_samples, self.step_samples)
@@ -872,4 +875,4 @@ class AccelerometryDataset(Dataset):
         return len(self.data_windows)
 
     def __getitem__(self, idx):
-        return self.data_windows[idx]        
+        return self.data_windows[idx]
