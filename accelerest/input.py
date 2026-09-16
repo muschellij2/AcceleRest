@@ -18,7 +18,7 @@ import actipy
 
 
 RAW_SUFFIXES = (".cwa", ".cwa.gz", ".gt3x", ".gt3x.gz")
-SUPPORTED_FILE_TYPES = ("auto", "h5", "cwa", "cwa.gz", "gt3x", "gt3x.gz", "csv")
+SUPPORTED_FILE_TYPES = ("auto", "h5", "cwa", "cwa.gz", "gt3x", "gt3x.gz", "csv", "csv.gz")
 _TIME_NAMES = ("time", "timestamp", "datetime", "date_time", "date")
 _AXIS_NAMES = {
     "x": ("x", "acc_x", "acceleration_x", "accelerometer_x"),
@@ -30,7 +30,7 @@ _AXIS_NAMES = {
 def infer_file_type(path: str | Path) -> str:
     """Return the supported type implied by *path*, or raise a useful error."""
     name = Path(path).name.lower()
-    for suffix in (".cwa.gz", ".gt3x.gz", ".gt3x", ".cwa", ".h5", ".csv"):
+    for suffix in (".cwa.gz", ".gt3x.gz", ".csv.gz", ".gt3x", ".cwa", ".h5", ".csv"):
         if name.endswith(suffix):
             return suffix[1:]
     raise ValueError(
@@ -163,11 +163,11 @@ def load_accelerometry(path: str | Path, file_type: str = "auto", detect_nonwear
             raise ValueError("HDF5 data/accelerometry must have shape (3, n_samples).")
         return array, None, {"input_type": "h5", "processed_by": "caller"}
 
-    if detected == "csv":
+    if detected in ("csv", "csv.gz"):
         raw = _read_csv(path)
         sample_rate = _sample_rate(raw.index)
         frame, info = _process_frame(raw, sample_rate, detect_nonwear)
-        info = {"input_type": "csv", "input_sample_rate_hz": sample_rate, **info}
+        info = {"input_type": detected, "input_sample_rate_hz": sample_rate, **info}
     else:
         # Actipy natively decompresses .cwa.gz and .gt3x.gz before selecting its
         # Axivity or ActiGraph reader, so do not manually unpack these files.

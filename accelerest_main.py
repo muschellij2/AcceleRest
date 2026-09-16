@@ -25,7 +25,7 @@ def parse_args():
                         help='Path to folder to save accelerest outputs in.'
                              'Defaults to <data_file_dir>/accelerest_outputs')
     parser.add_argument('--file_type', type=str, default='auto', choices=SUPPORTED_FILE_TYPES,
-                        help='Input type. auto finds h5, cwa, cwa.gz, gt3x, gt3x.gz, and csv.')
+                        help='Input type. auto finds h5, cwa, cwa.gz, gt3x, gt3x.gz, csv, and csv.gz.')
 
     parser.add_argument('--save_preprocessed', action='store_true',
                         help='Whether to save the preprocessed data.')
