@@ -67,6 +67,8 @@ hard_preds[0] # The predicted sleep stage for the first patch.
 
 ```
 
+When `--context_window_shift` is greater than 1, epochs not reached by any context window are retained as rows with `NaN` probabilities rather than being mistaken for uniform predictions.
+
 For respiratory events the index label map is:
 no_event: 0, event: 1
 
