@@ -1,13 +1,20 @@
 import argparse
-import os, glob
+import os
+import json
+import subprocess
 import numpy as np
 import pandas as pd
-import actipy
 
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
 from accelerest.datasets.sleep_dataset import AccelerometryDataset
+from accelerest.input import (
+    SUPPORTED_FILE_TYPES,
+    find_input_files,
+    load_accelerometry,
+    output_stem,
+)
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -17,11 +24,14 @@ def parse_args():
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Path to folder to save accelerest outputs in.'
                              'Defaults to <data_file_dir>/accelerest_outputs')
-    parser.add_argument('--file_type', type=str, default = 'h5',
-                        help='accelerometry file extension, currently h5 or cwa')
+    parser.add_argument('--file_type', type=str, default='auto', choices=SUPPORTED_FILE_TYPES,
+                        help='Input type. auto finds h5 plus every format actipy reads: cwa, gt3x, and bin '
+                             '(each optionally .gz or .zip compressed).')
 
     parser.add_argument('--save_preprocessed', action='store_true',
                         help='Whether to save the preprocessed data.')
+    parser.add_argument('--no_detect_nonwear', action='store_true',
+                        help='Do not mark non-wear periods using actipy (enabled by default).')
     
     # Select which predictions to return
     parser.add_argument('--lstm_sleepstages', action='store_true',
@@ -98,20 +108,21 @@ def eval(args, device):
     model.eval()
 
     # Get files
-    args.file_type = args.file_type.lstrip('.')
-    print(f'Searching for files with .{args.file_type} extension')
-    files = glob.glob(os.path.join(args.data_file_dir, f'*.{args.file_type}*'))
+    print(f'Searching for {args.file_type} input files')
+    files = find_input_files(args.data_file_dir, args.file_type)
 
     print(f'Processing {len(files)} files.')
 
     # Make overall output dir
     os.makedirs(args.output_dir, exist_ok = True)
 
+    stems = [output_stem(file) for file in files]
+    duplicate_stems = {stem for stem in stems if stems.count(stem) > 1}
     for i, file in enumerate(files):
         # Make individual output dirs if they don't exist
         individual_output_dir = os.path.join(
             args.output_dir,
-            os.path.basename(file).rsplit('.')[0],
+            output_stem(file) if output_stem(file) not in duplicate_stems else os.path.basename(file),
         )
         if os.path.exists(individual_output_dir):
             # Check if all output files exist
@@ -184,34 +195,20 @@ def finalize_head_storage(storage, output_dir, prefix):
     )
 
 def eval_single(file, model, device, output_dir, args):
-    if args.file_type == 'h5':
-        # Read project-native h5 format
-        with h5py.File(file, 'r', rdcc_nbytes=1024**3) as f:
-            data_array = np.array(f['data/accelerometry'])
-    
-    elif args.file_type == 'cwa':
-        # Use actipy to read and process raw file
-        dataframe, info = actipy.read_device(
-            file,
-            lowpass_hz = 15,
-            calibrate_gravity = True,
-            detect_nonwear = False,
-            resample_hz = 30,
-            start_time = None,
-            end_time = None,
-            skipdays = 0,
-            cutdays = 0,
-            start_first_complete_minute = False,
-            calibrate_gravity_kwargs = None,
-            flag_nonwear_kwargs = None,
-            verbose = True,
+    try:
+        data_array, timestamps, processing_info = load_accelerometry(
+            file, args.file_type, detect_nonwear=not args.no_detect_nonwear,
         )
-        processed_file = os.path.basename(file).rsplit('.')[0] + '.csv'
-        if args.save_preprocessed:
-            dataframe.to_csv(
-                os.path.join(output_dir, processed_file),
-            )
-        data_array = dataframe[['x','y','z']].to_numpy(dtype=np.float32).T
+    except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
+        print(f"[WARNING] Cannot use {file}: {error}")
+        return
+
+    with open(os.path.join(output_dir, "input_processing.json"), "w") as handle:
+        json.dump(processing_info, handle, indent=2, default=str)
+    if args.save_preprocessed and timestamps is not None:
+        preprocessed = pd.DataFrame(data_array.T, columns=["x", "y", "z"], index=timestamps)
+        preprocessed.index.name = "time"
+        preprocessed.to_csv(os.path.join(output_dir, "preprocessed_30hz.csv"))
     try:
         subject_dataset = AccelerometryDataset(
             accelerometry=data_array,
@@ -239,6 +236,14 @@ def eval_single(file, model, device, output_dir, args):
     
     print(f'Processing file: {os.path.basename(file)}')
     print(f'Number of windows: {num_windows}')
+
+    if timestamps is not None:
+        # One row per output epoch: the patches spanned by all context windows.
+        covered_patches = (num_windows - 1) * args.context_window_shift + window_size
+        patch_starts = timestamps[np.arange(covered_patches) * model.patch_size]
+        pd.DataFrame({"epoch_start": patch_starts}).to_csv(
+            os.path.join(output_dir, "epoch_start_times.csv"), index=False,
+        )
 
     storage = {}
     
