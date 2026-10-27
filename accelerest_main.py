@@ -124,10 +124,10 @@ def eval(args, device):
         eval_single(file, model, device, individual_output_dir, args)
 
 
-def init_storage(output_dir, prefix, num_windows, window_size, num_classes, args):
+def init_storage(output_dir, prefix, num_windows, num_patches, window_size, num_classes, args):
     storage = {
-        "sum_logits": torch.zeros((num_windows + window_size - 1, num_classes), dtype=torch.float32),
-        "position_count": torch.zeros((num_windows + window_size - 1, 1), dtype=torch.float32),
+        "sum_logits": torch.zeros((num_patches, num_classes), dtype=torch.float32),
+        "position_count": torch.zeros((num_patches, 1), dtype=torch.float32),
         "memmap": None,
         "shape": (num_windows, window_size, num_classes),
     }
@@ -142,15 +142,15 @@ def init_storage(output_dir, prefix, num_windows, window_size, num_classes, args
 
     return storage
 
-def store_outputs(storage: dict, y_hat: torch.Tensor, batch_start_idx: int):
+def store_outputs(storage: dict, y_hat: torch.Tensor, batch_start_patch: int):
     batch_size, window_size, num_classes = y_hat.shape
  
     # Fill slice of memmap corresponding to batch (optional)
     if storage["memmap"] is not None:
-        storage["memmap"][batch_start_idx: batch_start_idx + batch_size, :, :] = y_hat.numpy()
+        storage["memmap"][batch_start_patch // storage["step_patches"]: batch_start_patch // storage["step_patches"] + batch_size, :, :] = y_hat.numpy()
  
     for i in range(batch_size):
-        window_start = batch_start_idx + i
+        window_start = batch_start_patch + i * storage["step_patches"]
         # Mask for valid (non-nan) logits
         valid_mask = ~torch.isnan(y_hat[i])
         # Fill in predictions summing patch logits across context windows
@@ -178,6 +178,9 @@ def finalize_head_storage(storage, output_dir, prefix):
         storage["position_count"].clamp_min(1)
     )
     soft_preds = avg_logits.softmax(dim=-1)
+    # With context_window_shift > 1 some epochs are deliberately not visited.
+    # Preserve that fact instead of silently returning a uniform probability.
+    soft_preds[storage["position_count"].squeeze(-1) == 0] = torch.nan
     np.save(
         os.path.join(output_dir, f"{prefix}_soft_preds.npy"),
         soft_preds.numpy(),
@@ -236,6 +239,7 @@ def eval_single(file, model, device, output_dir, args):
     
     num_windows = len(subject_dataset)
     window_size = model.max_seq_len
+    num_patches = (num_windows - 1) * args.context_window_shift + window_size
     
     print(f'Processing file: {os.path.basename(file)}')
     print(f'Number of windows: {num_windows}')
@@ -254,10 +258,11 @@ def eval_single(file, model, device, output_dir, args):
                     # Initialize output storage for each prediction head
                     _, _, num_classes = logits.shape
                     storage[name] = init_storage(
-                        output_dir, name, num_windows, window_size, num_classes, args,
+                        output_dir, name, num_windows, num_patches, window_size, num_classes, args,
                     )   
+                    storage[name]["step_patches"] = args.context_window_shift
                 logits = logits.cpu()
-                store_outputs(storage[name], logits, batch_start_idx)
+                store_outputs(storage[name], logits, batch_start_idx * args.context_window_shift)
 
     for name in storage.keys():
         finalize_head_storage(storage[name], output_dir, name)
